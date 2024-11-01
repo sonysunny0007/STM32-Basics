@@ -6,6 +6,8 @@
 #define BUTTON_PIN              GPIO_PIN_13
 #define BUTTON_GPIO_PORT        GPIOC
 
+//sink mode LED
+
 void SystemClock_Config(void);
 void GPIO_Init(void);
 
