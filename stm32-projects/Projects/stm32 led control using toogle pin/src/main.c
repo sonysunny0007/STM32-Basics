@@ -1,66 +1,79 @@
 #include "stm32f4xx_hal.h"
+#include <stdio.h>
 
-// Define LED and Button pins
-#define LED_PIN                 GPIO_PIN_5
-#define LED_GPIO_PORT           GPIOA
-#define BUTTON_PIN              GPIO_PIN_13
-#define BUTTON_GPIO_PORT        GPIOC
+#define BUTTON_PIN              GPIO_PIN_2
+#define BUTTON_GPIO_PORT        GPIOE
+#define BUTTON_GPIO_CLK_ENABLE   __HAL_RCC_GPIOE_CLK_ENABLE
 
-//sink mode LED
+
+#define LED_PIN1                 GPIO_PIN_6
+#define LED_PIN2                 GPIO_PIN_2
+#define LED_GPIO_PORT            GPIOA
+#define LED_GPIO_CLK_ENABLE1     __HAL_RCC_GPIOA_CLK_ENABLE
+#define LED_GPIO_CLK_ENABLE2     __HAL_RCC_GPIOA_CLK_ENABLE
+
+
+
+// Define the UART handle
+//UART_HandleTypeDef huart2;
 
 void SystemClock_Config(void);
-void GPIO_Init(void);
+void LED_Init();
+void BUTTON_Init();
 
 int main(void) {
-    // Initialize HAL library and configure the system clock
     HAL_Init();
     SystemClock_Config();
 
-    // Initialize GPIO for LED and button
-    GPIO_Init();
+    BUTTON_Init();
+    LED_Init();
 
-    // Initialize the LED state
-    int ledState = 0;
 
-    // Main loop
-    while (1) {
-        // Check if the button is pressed
-        if (HAL_GPIO_ReadPin(BUTTON_GPIO_PORT, BUTTON_PIN) == GPIO_PIN_SET) {
-            // Wait for a short time to debounce
-            HAL_Delay(50);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET); // Start with the LED OFF
+    HAL_Delay(1000);  // Initial delay if needed
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET); // Start with the LED OFF
+     HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN2, GPIO_PIN_RESET); // Turn OFF the LED when button is not pressed
 
-            // Check the button state again to confirm
-            if (HAL_GPIO_ReadPin(BUTTON_GPIO_PORT, BUTTON_PIN) == GPIO_PIN_SET) {
-                // Toggle the LED state
-                ledState = !ledState;
-                HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN, ledState ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-                // Wait until button is released
-                while (HAL_GPIO_ReadPin(BUTTON_GPIO_PORT, BUTTON_PIN) == GPIO_PIN_SET);
-            }
+    if (HAL_GPIO_ReadPin(BUTTON_GPIO_PORT,BUTTON_PIN) == GPIO_PIN_SET) { // Button pressed
+         // printf("Button Pressed\n");
+            HAL_GPIO_WritePin(LED_GPIO_PORT,LED_PIN2, GPIO_PIN_SET); // Turn ON the LED
+         //  HAL_Delay(500);  // Debounce delay
+        }else {
+           HAL_GPIO_WritePin(LED_GPIO_PORT, LED_PIN2, GPIO_PIN_RESET); // Turn OFF the LED when button is not pressed
+       //  HAL_Delay(500);  // Debounce delay
         }
-    }
 }
 
-void GPIO_Init(void) {
-    // Enable GPIO clocks for LED and button
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    // Configure LED pin as output
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin = LED_PIN;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+void LED_Init(){
+    LED_GPIO_CLK_ENABLE1();
+    LED_GPIO_CLK_ENABLE2();
+    GPIO_InitTypeDef GPIO_InitStruct={0};
+    GPIO_InitStruct.Pin=LED_PIN1;
+    GPIO_InitStruct.Mode=GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull=GPIO_NOPULL;
+    GPIO_InitStruct.Speed=GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(LED_GPIO_PORT, &GPIO_InitStruct);
 
-    // Configure button pin as input with pull-down resistor
-    GPIO_InitStruct.Pin = BUTTON_PIN;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-    HAL_GPIO_Init(BUTTON_GPIO_PORT, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin=LED_PIN2;
+    HAL_GPIO_Init(LED_GPIO_PORT, &GPIO_InitStruct);
+
+
+
 }
+
+
+void BUTTON_Init(){
+    BUTTON_GPIO_CLK_ENABLE();
+    GPIO_InitTypeDef GPIO_InitStruct={0};
+    GPIO_InitStruct.Pin=BUTTON_PIN;
+    GPIO_InitStruct.Mode=GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull=GPIO_PULLUP;
+    HAL_GPIO_Init(BUTTON_GPIO_PORT, &GPIO_InitStruct);
+
+}
+
 
 void SystemClock_Config(void) {
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -83,4 +96,8 @@ void SystemClock_Config(void) {
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
     HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5);
+}
+
+void SysTick_Handler(void) {
+  HAL_IncTick();
 }

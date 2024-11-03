@@ -31,8 +31,12 @@ int main(void) {
     UART_Init();
 
     while (1) {
-        char msg[] = "Status: Running...\n";
+        char msg[] = "Status: Running...\r\n";
         HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
         HAL_Delay(1000); // Delay 1 second
     }
+}
+
+void SysTick_Handler(void) {
+  HAL_IncTick();
 }
