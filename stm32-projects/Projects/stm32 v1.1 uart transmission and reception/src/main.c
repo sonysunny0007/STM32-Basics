@@ -20,6 +20,8 @@ volatile uint8_t rx_index = 0;
 volatile uint8_t data_received = 0;
 char msg[50];
 
+//echo -e "Sony Sunny" > /dev/tty.usbserial-0001    //use this code in minicom to send the data
+
 int main(void)
 {
     // Initialize the HAL Library
@@ -41,15 +43,19 @@ int main(void)
 
    // Initial boot message
     HAL_UART_Transmit(&huart2, (uint8_t*)"System booting...\r\n", 19, HAL_MAX_DELAY);
+    //printf("Data Received: ");
+
 
     while (1) {
         if (data_received) {
-            HAL_UART_Transmit(&huart2, (uint8_t*)"Data received: ", 15, HAL_MAX_DELAY);
-            HAL_UART_Transmit(&huart2, rx_buffer, strlen((char*)rx_buffer), HAL_MAX_DELAY);
-            HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+          //  HAL_UART_Transmit(&huart2, (uint8_t*)"Data received: ", 15, HAL_MAX_DELAY);
+           printf("Data Recieved: %s\r\n", rx_buffer);
+            // HAL_UART_Transmit(&huart2, rx_buffer, strlen((char*)rx_buffer), HAL_MAX_DELAY);
+            // HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
 
             data_received = 0;  // Reset the flag
             rx_index = 0;       // Reset buffer index
+         
         } else {
             // Heartbeat message to check loop execution
             HAL_UART_Transmit(&huart2, (uint8_t*)"Waiting for UART data...\r\n", 27, HAL_MAX_DELAY);
@@ -151,26 +157,37 @@ void Start_UART_Reception(void) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART2) {
-        // Debug message to verify callback functionality
- //       HAL_UART_Transmit(&huart2, (uint8_t*)"Callback triggered: ", 19, HAL_MAX_DELAY);
-        //printf("%s", rx_buffer);
+        // Store the received byte in the buffer
         if (rx_index < RX_BUFFER_SIZE - 1) {
-            rx_buffer[rx_index++] = rx_byte;
-            if (rx_byte == '\n') {
-                data_received = 1;  // Set flag when newline is received
-                rx_buffer[rx_index] = '\0';  // Null-terminate the string
-                rx_index = 0;  // Reset buffer index for next message
+            rx_buffer[rx_index++] = rx_byte;  // Store the byte in the buffer
 
-                // Debug message when data is fully received
-                HAL_UART_Transmit(&huart2, (uint8_t*)"Message complete\r\n", 18, HAL_MAX_DELAY);
+            // Check if the received byte is a newline character or carriage return
+            if (rx_byte == '\n' || rx_byte == '\r') {
+                // Null-terminate the string at the current index
+                rx_buffer[rx_index] = '\0';
+                
+                // Print the received data
+                //printf("Data: %s\r\n", rx_buffer);
+                data_received = 1;  // Set flag when newline is received
+                //printf("Data Status: %d\r\n", data_received);
+
+                // Reset buffer index for the next message
+                rx_index = 0;
+
+                // Send a message to indicate that the data reception is complete
+               // HAL_UART_Transmit(&huart2, (uint8_t*)"Message complete\r\n", 18, HAL_MAX_DELAY);
             }
         } else {
-            rx_index = 0;  // Reset if buffer overflows
+            // Reset index if buffer overflows (overflow protection)
+            rx_index = 0;
         }
-        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Restart reception
-        
+
+        // Restart UART reception interrupt for the next byte
+        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  
     }
 }
+
+
 
 void USART2_IRQHandler(void) {
     HAL_UART_IRQHandler(&huart2);
