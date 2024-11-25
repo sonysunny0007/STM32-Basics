@@ -6,6 +6,7 @@
 #include "sysclock.h"
 #include "gpio.h"
 #include "math.h"
+#include "timer.h"
 
 //echo -e "Sony Sunny" > /dev/tty.usbserial-0001    //use this code in minicom to send the data
 
@@ -13,13 +14,13 @@
 TIM_HandleTypeDef htim2;
 
 //Software counters for intervals
-volatile uint32_t counter_60s = 0;
+volatile uint32_t counter_10s = 0;
 volatile uint32_t counter_300s = 0;
 volatile uint32_t counter_600s = 0;
 
 
 //flags for each interval
-volatile uint8_t flag_60s = 0;
+volatile uint8_t flag_10s = 0;
 volatile uint8_t flag_300s = 0;
 volatile uint8_t flag_600s = 0;
 
@@ -28,12 +29,10 @@ volatile uint8_t flag_600s = 0;
 float temperature_buffer[BUFFER_SIZE];
 uint32_t buffer_index = 0;
 
-void MX_TIM2_Init(void);
-float ReadTemperatureSensor(void);
-float CalculateAverageTemperature(void);
-void LogData(float avgTemp);
-void SendDataToCloud(float avgTemp);
 
+void MX_TIM2_Init(void);
+void Timer2Callback(void);
+void Timer3Callback(void);
 
 
 int main(void)
@@ -59,140 +58,79 @@ int main(void)
     //Print system clock frequency
     uint32_t sysclk = Get_SYSCLK_Frequency();
     printf("System clock frequency: %lu MHz\r\n", sysclk/1000000);
-
-    float temp=112.3;
-    printf("Temperature: %f", temp);
     
-    
-
     //adding 2s delay
     HAL_Delay(2000);
 
     //Enable PA6 led
     GPIO_Init('A',GPIO_PIN_6,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL,GPIO_SPEED_FREQ_LOW);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+//    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
 
-    MX_TIM2_Init(); // Initialize the timer
-    HAL_TIM_Base_Start_IT(&htim2); // Start the timer interrupt
-    HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(TIM2_IRQn);
-    
-    srand(HAL_GetTick());
+// Timer 2 configuration (Temperature Sensor - 1 second interval)
+    Timer_Config timer2_config;
+    timer2_config.Instance = TIM2;
+    timer2_config.Prescaler = 16799;  // Prescaler for 10 kHz (assuming 84 MHz clock)
+    timer2_config.Period = 10000 - 1;    // 1-second period (10,000 ticks at 10 kHz)
+    timer2_config.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    timer2_config.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    timer2_config.Callback = Timer2Callback;
+
+    // Timer 3 configuration (LED Toggle - 1-second interval)
+    Timer_Config timer3_config;
+    timer3_config.Instance = TIM3;
+    timer3_config.Prescaler = 16800 - 1;  // Prescaler for 10 kHz (168 MHz clock)
+    timer3_config.Period = 10000 - 1;     // 1-second period (10,000 ticks at 10 kHz)
+    timer3_config.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    timer3_config.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    timer3_config.Callback = Timer3Callback;
+
+    // Initialize both timers
+    Timer_Init(&timer2_config);
+    Timer_Init(&timer3_config);
+
+    // Start both timers
+    Timer_Start(&timer2_config);
+    Timer_Start(&timer3_config);
 
     while (1) {
-
-        if (flag_60s) {
-        flag_60s = 0;
-
-        float temperature = ReadTemperatureSensor();
-        printf("Read Temperature: %.2f°C\r\n", temperature); // Debug the raw reading
-        temperature_buffer[buffer_index] = temperature;
-        printf("Stored Temperature: %.2f°C\r\n", temperature_buffer[buffer_index]);
-
-        buffer_index++;
-        if (buffer_index >= BUFFER_SIZE) {
-        buffer_index = 0; // Circular buffer
-    }
-}
-
-        if(flag_300s){
-            flag_300s=0;
-            //calculate and log avergare temperature
-            float avgTemp = CalculateAverageTemperature();
-            LogData(avgTemp);
-        }
-
-        if (flag_600s)
-        {
-            flag_600s = 0;
-            // Send data summary to the cloud
-            float avgTemp = CalculateAverageTemperature();
-            SendDataToCloud(avgTemp);
-        }
-
-    }
-}
-
-// TIM2 Initialization (1-second interval)
-void MX_TIM2_Init(void)
-{
-    __HAL_RCC_TIM2_CLK_ENABLE();
-    htim2.Instance = TIM2;
-    htim2.Init.Prescaler = 16799;          // for 10 Khz, prescaler = (168000,000/ 10,000)-1 = 16799
-    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim2.Init.Period = 10000 - 1;            // 1-second interval (10,000 ticks at 10 kHz)
-    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-    {
-        while (1); // Error handling
-    }
-}
-
-// Timer interrupt callback
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance == TIM2)
-    {
-        // Increment counters
-        counter_60s++;
-        counter_300s++;
-        counter_600s++;
-    
-        printf("Counter_60s: %ld, Counter_300s: %ld, Counter_600s: %ld\r\n", counter_60s, counter_300s, counter_600s);
-        // Set flags when thresholds are reached
-        if (counter_60s >= 60)
-        {
-            counter_60s = 0;
-            flag_60s = 1;
-            
-        }
-
-        if (counter_300s >= 300)
-        {
-            counter_300s = 0;
-            flag_300s = 1;
-        }
-
-        if (counter_600s >= 600)
-        {
-            counter_600s = 0;
-            flag_600s = 1;
+        if(flag_10s) {
+            flag_10s = 0;
+            static uint8_t led_state = 0;
+            // Toggle an LED for system health status
+            led_state = !led_state;
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, led_state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            printf("Timer 3 interrupt triggered! LED toggled: %s\r\n", led_state ? "ON" : "OFF");
         }
     }
 }
 
-// Interrupt handler for Timer 2
-void TIM2_IRQHandler(void)
-{
-    HAL_TIM_IRQHandler(&htim2); // Pass control to the HAL
+// Timer callback functions
+void Timer2Callback(void) {
+    static uint8_t temperature_sensor_read_count = 0;
+
+    printf("Timer 2 interrupt triggered! Reading temperature sensor...\r\n");
+
+    // Simulate temperature reading (actual sensor reading code would go here)
+    float temperature = 25.0 + (rand() % 100) / 10.0;
+    printf("Temperature Reading: %.2f°C\r\n", temperature);
+
+    // Count every 60 readings (60 seconds) for logging or sending to cloud
+    if (++temperature_sensor_read_count >= 60) {
+        temperature_sensor_read_count = 0;
+        printf("1-minute temperature summary sent to cloud.\r\n");
+    }
 }
 
-// Dummy functions to simulate sensor and cloud interactions
-float ReadTemperatureSensor(void)
+// Timer 3 callback function
+void Timer3Callback(void)
 {
-    // Simulate temperature reading (random data for demonstration)
-    return 25.0 + (rand() % 100) / 10.0; // Random temperature between 25.0 and 34.9
-}
+    counter_10s++;
+    if (counter_10s >= 10) {
+        counter_10s = 0;
+        flag_10s = 1;  // Trigger 10s flag
+    }
 
-float CalculateAverageTemperature(void)
-{
-    float sum=0.0;
-    for(uint32_t i=0; i<buffer_index; i++)
-        sum+=temperature_buffer[i];
-    return (buffer_index>0)?(sum/buffer_index):0.0;
-}
-
-void LogData(float avgTemp)
-{
-    // Simulate logging data to storage
-    printf("Logging Data: Avg Temp = %.2f°C\n", avgTemp);
-}
-
-void SendDataToCloud(float avgTemp)
-{
-    // Simulate sending data to the cloud
-    printf("Sending Data to Cloud: Avg Temp = %.2f°C\n", avgTemp);
+  //  printf("Timer3Callback executed. Counter: %d\r\n", counter_10s);
 }
 
 void SysTick_Handler(void) {
