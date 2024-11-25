@@ -66,41 +66,71 @@ int main(void)
     GPIO_Init('A',GPIO_PIN_6,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL,GPIO_SPEED_FREQ_LOW);
 //    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
 
-// UART Initialization with baud rate of 9600 for all UARTs
-    UART_Init(&huart1, 9600);
-    UART_Init(&huart2, 9600);
-    UART_Init(&huart6, 9600);
+// Timer 2 configuration (Temperature Sensor - 1 second interval)
+    Timer_Config timer2_config;
+    timer2_config.Instance = TIM2;
+    timer2_config.Prescaler = 16799;  // Prescaler for 10 kHz (assuming 84 MHz clock)
+    timer2_config.Period = 10000 - 1;    // 1-second period (10,000 ticks at 10 kHz)
+    timer2_config.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    timer2_config.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    timer2_config.Callback = Timer2Callback;
 
-    // Transmit an initial message over UART2
-    uint8_t init_message[] = "System Initialized on UART2\r\n";
-    UART_Transmit_IT(&huart2, init_message, sizeof(init_message) - 1);
+    // Timer 3 configuration (LED Toggle - 1-second interval)
+    Timer_Config timer3_config;
+    timer3_config.Instance = TIM3;
+    timer3_config.Prescaler = 16800 - 1;  // Prescaler for 10 kHz (168 MHz clock)
+    timer3_config.Period = 10000 - 1;     // 1-second period (10,000 ticks at 10 kHz)
+    timer3_config.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    timer3_config.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    timer3_config.Callback = Timer3Callback;
 
-    // Start receiving data on all UARTs
-    UART_Receive_IT(&huart1, uart_rx_buffer, 1);
-    UART_Receive_IT(&huart2, uart_rx_buffer, 1);
-    UART_Receive_IT(&huart6, uart_rx_buffer, 1);
+    // Initialize both timers
+    Timer_Init(&timer2_config);
+    Timer_Init(&timer3_config);
 
-    // Main loop
-    while (1)
-    {
-        // Example: Process received data on UART1 and send an echo back
-        if (uart_rx_index > 0)
-        {
-            // Echo received data on UART1
-            UART_Transmit_IT(&huart1, uart_rx_buffer, uart_rx_index);
-            uart_rx_index = 0;  // Reset index after transmission
-        }
+    // Start both timers
+    Timer_Start(&timer2_config);
+    Timer_Start(&timer3_config);
 
-        // Example: UART6 can communicate with another peripheral
-        // Send periodic data to a peripheral through UART6
-        static uint32_t tick = 0;
-        if (HAL_GetTick() - tick > 1000) // 1 second interval
-        {
-            uint8_t data[] = "Sending data to peripheral on UART6\r\n";
-            UART_Transmit_IT(&huart6, data, sizeof(data) - 1);
-            tick = HAL_GetTick();
+    while (1) {
+        if(flag_10s) {
+            flag_10s = 0;
+            static uint8_t led_state = 0;
+            // Toggle an LED for system health status
+            led_state = !led_state;
+            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, led_state ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            printf("Timer 3 interrupt triggered! LED toggled: %s\r\n", led_state ? "ON" : "OFF");
         }
     }
+}
+
+// Timer callback functions
+void Timer2Callback(void) {
+    static uint8_t temperature_sensor_read_count = 0;
+
+    printf("Timer 2 interrupt triggered! Reading temperature sensor...\r\n");
+
+    // Simulate temperature reading (actual sensor reading code would go here)
+    float temperature = 25.0 + (rand() % 100) / 10.0;
+    printf("Temperature Reading: %.2f°C\r\n", temperature);
+
+    // Count every 60 readings (60 seconds) for logging or sending to cloud
+    if (++temperature_sensor_read_count >= 60) {
+        temperature_sensor_read_count = 0;
+        printf("1-minute temperature summary sent to cloud.\r\n");
+    }
+}
+
+// Timer 3 callback function
+void Timer3Callback(void)
+{
+    counter_10s++;
+    if (counter_10s >= 10) {
+        counter_10s = 0;
+        flag_10s = 1;  // Trigger 10s flag
+    }
+
+  //  printf("Timer3Callback executed. Counter: %d\r\n", counter_10s);
 }
 
 void SysTick_Handler(void) {

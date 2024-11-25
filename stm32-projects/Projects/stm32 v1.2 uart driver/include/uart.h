@@ -1,36 +1,46 @@
-#ifndef UART_H
-#define UART_H
+#ifndef __UART_H
+#define __UART_H
 
 #include "stm32f4xx_hal.h"
 
-//Define the UART buffer size
-#define RX_BUFFER_SIZE 100
+// Define the maximum buffer size for reception
+#define UART_BUFFER_SIZE 256
 
-//Declare global variables to Hold the UART status and data
-extern uint8_t rx_buffer[RX_BUFFER_SIZE];
-extern uint8_t word_buffer[RX_BUFFER_SIZE];
-extern volatile uint8_t rx_index;
-extern volatile uint8_t data_received;
-extern volatile uint8_t word_index; 
+// Declare the UART handle
+extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart3;
+extern UART_HandleTypeDef huart4;
+extern UART_HandleTypeDef huart5;
+extern UART_HandleTypeDef huart6;
 
+// Buffer for UART reception and transmission
+extern uint8_t uart_rx_buffer[UART_BUFFER_SIZE];
+extern uint8_t uart_tx_buffer[UART_BUFFER_SIZE];
+extern volatile uint16_t uart_rx_index;
+extern volatile uint16_t uart_tx_index;
 
-//UART Initialization function 
-void UART_Init(void);
+// UART Initialization function
+void UART_Init(UART_HandleTypeDef *huart, uint32_t baud_rate);
 
-//start receiving data via UART
-void UART_StartReception(void);
+// UART transmit function (non-blocking)
+HAL_StatusTypeDef UART_Transmit_IT(UART_HandleTypeDef *huart, uint8_t *data, uint16_t size);
 
-// Transmit a message via UART
-void UART_Transmit(const char *message);
+// UART receive function (non-blocking)
+HAL_StatusTypeDef UART_Receive_IT(UART_HandleTypeDef *huart, uint8_t *data, uint16_t size);
 
-//Uart Error handler function
-void Error_Handler(void);
+// UART IRQ Handlers
+void USART1_IRQHandler(void);
+void USART2_IRQHandler(void);
+void USART3_IRQHandler(void);
+void UART4_IRQHandler(void);
+void UART5_IRQHandler(void);
+void USART6_IRQHandler(void);
 
-//DMA method
-char *UART_ProcessBuffer(void);
+// UART Transmission callback
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart);
 
-//polling method
-void uart_reception_polling();
+// UART Reception callback
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 
-
-#endif
+#endif /* __UART_H */

@@ -1,122 +1,153 @@
 #include "uart.h"
-#include "stm32f4xx_hal.h"
 #include <stdio.h>
+#include <string.h>
 
-// Define the maximum buffer size for reception
-#define UART_BUFFER_SIZE 256
+//UART handler (decalred statitc to limit the scope to this file)
+static UART_HandleTypeDef huart2;
 
-// Declare the UART handles for all UARTs
-UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
-UART_HandleTypeDef huart3;
-UART_HandleTypeDef huart4;
-UART_HandleTypeDef huart5;
-UART_HandleTypeDef huart6;
+//UART bufffer to store the recived data
+uint8_t rx_buffer[RX_BUFFER_SIZE];
+uint8_t word_buffer[RX_BUFFER_SIZE];
+volatile uint8_t rx_index = 0;
+volatile uint8_t data_received = 0;
+volatile uint8_t word_index =0;
+uint8_t rx_byte;
 
-// Declare the UART buffers and indices
-uint8_t uart_rx_buffer[UART_BUFFER_SIZE];
-uint8_t uart_tx_buffer[UART_BUFFER_SIZE];
-volatile uint16_t uart_rx_index = 0;
-volatile uint16_t uart_tx_index = 0;
+//Initialize UART peripheral
+void UART_Init(void) {
 
-// UART Initialization function
-void UART_Init(UART_HandleTypeDef *huart, uint32_t baud_rate)
-{
-    huart->Instance = USART1; // Set the UART instance (change accordingly for other UARTs)
-    huart->Init.BaudRate = baud_rate;
-    huart->Init.WordLength = UART_WORDLENGTH_8B;
-    huart->Init.StopBits = UART_STOPBITS_1;
-    huart->Init.Parity = UART_PARITY_NONE;
-    huart->Init.Mode = UART_MODE_TX_RX;
-    huart->Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart->Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_NVIC_SetPriority(USART2_IRQn, 0, 0);  // Set priority for USART2 interrupt
+    HAL_NVIC_EnableIRQ(USART2_IRQn);          // Enable the interrupt in NVIC
+    
+    __HAL_RCC_USART2_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
 
-    if (HAL_UART_Init(huart) != HAL_OK)
-    {
-        // Initialization Error
-        printf("UART Initialization Failed\r\n");
-        while (1);
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_2 | GPIO_PIN_3; // PA2 -> TX, PA3 -> RX
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&huart2) != HAL_OK) {
+        Error_Handler();
     }
-
-    // Enable UART interrupt (for all UARTs)
-    if (huart == &huart1) HAL_NVIC_EnableIRQ(USART1_IRQn);
-    if (huart == &huart2) HAL_NVIC_EnableIRQ(USART2_IRQn);
-    // if (huart == &huart3) HAL_NVIC_EnableIRQ(USART3_IRQn);
-    // if (huart == &huart4) HAL_NVIC_EnableIRQ(UART4_IRQn);
-    // if (huart == &huart5) HAL_NVIC_EnableIRQ(UART5_IRQn);
-    if (huart == &huart6) HAL_NVIC_EnableIRQ(USART6_IRQn);
 }
 
-// UART transmit function (non-blocking)
-HAL_StatusTypeDef UART_Transmit_IT(UART_HandleTypeDef *huart, uint8_t *data, uint16_t size)
-{
-    return HAL_UART_Transmit_IT(huart, data, size);
+//polling method
+void uart_reception_polling(){
+
+    if(HAL_UART_Receive(&huart2, rx_buffer,RX_BUFFER_SIZE, HAL_MAX_DELAY)==HAL_OK){
+        HAL_UART_Transmit(&huart2, rx_buffer, strlen((char*)rx_buffer), HAL_MAX_DELAY);
+    }
 }
 
-// UART receive function (non-blocking)
-HAL_StatusTypeDef UART_Receive_IT(UART_HandleTypeDef *huart, uint8_t *data, uint16_t size)
-{
-    return HAL_UART_Receive_IT(huart, data, size);
+
+// Start UART reception in interrupt mode
+void UART_StartReception(void) {
+    HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Start interrupt-based reception
 }
 
-// UART IRQ Handlers for all UARTs
-void USART1_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&huart1);
+
+
+// Callback function for UART RX Complete
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+
+            // Check if the received byte is a newline character or carriage return
+        if (rx_index < RX_BUFFER_SIZE - 1) {
+            rx_buffer[rx_index++] = rx_byte;  // Store the byte in the buffer
+
+        // Check if the received byte is a newline character or carriage return
+        if (rx_byte == '\n' || rx_byte == '\r') {
+            // Null-terminate the string at the current index
+            rx_buffer[rx_index] = '\0';  // Null-terminate string
+
+            // Debug: Print the received data before resetting
+            //printf("Received Data: %s\r\n", rx_buffer); // Verify content of rx_buffer
+
+            data_received = 1;  // Set flag when newline is received
+
+            // Reset buffer index for the next message
+            rx_index = 0;
+        }
+        } else {
+            // Handle buffer overflow (optional)
+            rx_index = 0;  // Reset index if buffer overflows
+        }
+
+        // Restart UART reception interrupt for the next byte
+        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  
+    }
 }
 
-void USART2_IRQHandler(void)
-{
+//UART Interrupt handler
+void USART2_IRQHandler(void) {
     HAL_UART_IRQHandler(&huart2);
 }
 
-void USART3_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&huart3);
-}
+//DMA method
+char *UART_ProcessBuffer(void) {
+    // Loop through the rx_buffer to process received bytes
+    for (int i = 0; i < RX_BUFFER_SIZE; i++) {
+        // Check if the character is a newline or carriage return
+        if (rx_buffer[i] == '\n' || rx_buffer[i] == '\r') {
+            // Transmit the full word stored in word_buffer
+            HAL_UART_Transmit(&huart2, word_buffer, word_index, HAL_MAX_DELAY);
 
-void UART4_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&huart4);
-}
+            // Null-terminate the word_buffer string
+            word_buffer[word_index] = '\0';
 
-void UART5_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&huart5);
-}
+            // Clear the rx_buffer character
+            rx_buffer[i] = 0;
 
-void USART6_IRQHandler(void)
-{
-    HAL_UART_IRQHandler(&huart6);
-}
+            // Reset rx_index and word_index
+            rx_index = 0;
+            word_index = 0;
 
-// UART Transmission callback (called when a byte is transmitted)
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    uart_tx_index++;  // Update the transmission buffer index
-    if (uart_tx_index < UART_BUFFER_SIZE)
-    {
-        // Start the next byte transmission
-        UART_Transmit_IT(huart, &uart_tx_buffer[uart_tx_index], 1);
-    }
-    else
-    {
-        // Transmission is complete, reset the index
-        uart_tx_index = 0;
-    }
-}
+            // Return the pointer to the processed word
+            return (char *)word_buffer;
+        } else {
+            // Store the received character in word_buffer if not full
+            if (word_index < RX_BUFFER_SIZE - 1) {
+                word_buffer[word_index++] = rx_buffer[i];
+            }
 
-// UART Reception callback (called when a byte is received)
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    // Store the received byte in the buffer
-    uart_rx_buffer[uart_rx_index++] = huart->Instance->DR;  // Read the data register
-
-    if (uart_rx_index >= UART_BUFFER_SIZE)
-    {
-        uart_rx_index = 0;  // Reset the buffer index if it overflows
+            // Clear the character in the rx_buffer to avoid repeat processing
+            rx_buffer[i] = 0;
+        }
     }
 
-    // Re-enable the UART receive interrupt to continue receiving data
-    UART_Receive_IT(huart, &uart_rx_buffer[uart_rx_index], 1);
+    // Null-terminate the word_buffer in case no newline is found
+    word_buffer[word_index] = '\0';
+    return (char *)word_buffer;
+}
+
+
+//printf function
+int _write(int file, char *data, int len) {
+    HAL_UART_Transmit(&huart2, (uint8_t*)data, len, HAL_MAX_DELAY);
+    return len;
+}
+
+// Transmit a string via UART
+void UART_Transmit(const char *message) {
+    HAL_UART_Transmit(&huart2, (uint8_t *)message, strlen(message), HAL_MAX_DELAY);
+}
+
+void Error_Handler(void) {
+    while (1) {
+        // HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+        // HAL_Delay(500);
+    }
 }
