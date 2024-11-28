@@ -40,25 +40,29 @@ int main(void)
 
     MX_TIM3_Init();
 
-    //Start PWM signal generation on timer 3 channel 1 (PIN6)
-    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-
     //Configre GPIO PIN6
-    GPIO_Init('A',GPIO_PIN_6,GPIO_MODE_OUTPUT_PP,GPIO_NOPULL,GPIO_SPEED_FREQ_LOW, GPIO_AF2_TIM3);
+    GPIO_Init('A',GPIO_PIN_6,GPIO_MODE_AF_PP,GPIO_NOPULL,GPIO_SPEED_FREQ_LOW, GPIO_AF2_TIM3);
+
+
+    //Start PWM signal generation on timer 3 channel 1 (PIN6)
+    if(HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1) != HAL_OK){
+        printf("Failed to start PWM\r\n");
+    };
+
 
 
     while(1){
 
         //Gradually increase and decrease LED brightness
         for(uint16_t duty=0; duty<=100; duty++){
-            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
-            HAL_Delay(10);
+            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, (duty * (htim3.Init.Period + 1)) / 100);
+            HAL_Delay(50); //increase or decrease the delay to vary the ON/OFF time
         }
-        for(uint16_t duty=100;duty>0;duty++){
-            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
-            HAL_Delay(10);
+        for(uint16_t duty=100;duty>0;duty--){
+            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, (duty * (htim3.Init.Period + 1)) / 100);
+            HAL_Delay(50);
         }
-
+        HAL_Delay(1000); //LED Stays fully off for 1 second
     }
 }
 
@@ -66,31 +70,33 @@ int main(void)
 
 void MX_TIM3_Init(void){
 
-__HAL_RCC_TIM3_CLK_ENABLE();
+    __HAL_RCC_TIM3_CLK_ENABLE();
 
-htim3.Instance=TIM3;
-htim3.Init.Prescaler=16800-1;
-htim3.Init.CounterMode=TIM_COUNTERMODE_UP;
-htim3.Init.Period=1000-1;
-htim3.Init.ClockDivision=TIM_CLOCKDIVISION_DIV1;
-htim3.Init.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_DISABLE;
+    htim3.Instance=TIM3;
+    htim3.Init.Prescaler=168-1;
+    htim3.Init.CounterMode=TIM_COUNTERMODE_UP;
+    htim3.Init.Period=1000-1;
+    htim3.Init.ClockDivision=TIM_CLOCKDIVISION_DIV1;
+    htim3.Init.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_DISABLE;
 
-if(HAL_TIM_PWM_Init(&htim3) != HAL_OK){
-    while(1); //Error handling
-}
+    if(HAL_TIM_PWM_Init(&htim3) != HAL_OK){
+        printf("TIM3 Initialization Failed\r\n");
+        while (1);
+    }
 
 
 
-//Configure PWM channel
-TIM_OC_InitTypeDef sConfigOC={0};
-sConfigOC.OCMode = TIM_OCMODE_PWM1;
-sConfigOC.Pulse=0;
-sConfigOC.OCPolarity = TIM_OCNPOLARITY_HIGH;
-sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
+    //Configure PWM channel
+    TIM_OC_InitTypeDef sConfigOC={0};
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse=0;
+    sConfigOC.OCPolarity = TIM_OCNPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
 
-if(HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1)!= HAL_OK){
-    while(1);
-}
+    if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
+        printf("PWM Channel Configuration Failed\r\n");
+        while (1);
+    }
 
 }
 
