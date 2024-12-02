@@ -41,24 +41,22 @@ int main(void) {
 
     // Configure GPIO for input capture (PA0 for TIM2_CH1)
     __HAL_RCC_GPIOA_CLK_ENABLE();
-    GPIO_Init('A', GPIO_PIN_0, GPIO_MODE_AF_PP, GPIO_PULLUP, GPIO_SPEED_FREQ_HIGH, GPIO_AF1_TIM2);
+    GPIO_Init('A', GPIO_PIN_0, GPIO_MODE_AF_PP, GPIO_PULLDOWN, GPIO_SPEED_FREQ_HIGH, GPIO_AF1_TIM2);
 
     // Configure GPIO for LED (PA6)
-    GPIO_Init('A', GPIO_PIN_6, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_HIGH, NULL);
+    //GPIO_Init('A', GPIO_PIN_6, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_HIGH, NULL);
 
     // Start input capture in interrupt mode
-    if(HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1) != HAL_OK){
-        printf("Failed to start PWM\r\n");
-    };
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
 
     // Main loop
     while (1) {
         snprintf(uart_buffer, sizeof(uart_buffer), "Pulse count: %lu\r\n", pulse_count);
         UART_Transmit(uart_buffer);
 
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);  // Turn on LED
+        //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);  // Turn on LED
         HAL_Delay(1000);
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);  // Turn off LED
+        //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);  // Turn off LED
         HAL_Delay(1000);
     }
 }
