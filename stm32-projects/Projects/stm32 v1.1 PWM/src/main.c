@@ -24,8 +24,7 @@ int main(void)
     // Configure system clock
     SystemClock_Config();
 
-    // // Initialize GPIO and UART
-    //GPIO_Init();
+    // // Initialize UART
     UART_Init();
 
     // Initial boot message
