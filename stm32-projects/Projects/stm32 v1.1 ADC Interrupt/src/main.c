@@ -18,6 +18,7 @@ volatile uint32_t adc_value=0;
 void MX_ADC_Init(void);
 void MX_GPIO_Init(void);
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc);
+uint32_t getADCValue(void);
 
 int main(void)
 {
@@ -53,11 +54,9 @@ int main(void)
 
     while (1) {
         // Poll for ADC conversion
-        if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) {
-            uint32_t adc_value = HAL_ADC_GetValue(&hadc1);  // Read ADC value
-            float voltage = (adc_value * 3.3) / 4095;  // Convert to voltage
-            printf("Voltage: %.2f V\r\n", voltage);
-        }
+        uint32_t currentAdcValue = getADCValue();
+        float voltage = (currentAdcValue * 3.3) / 4095;  // Convert to voltage
+        printf("Voltage: %.2f V\r\n", voltage);
         HAL_Delay(500);  // Delay to avoid spamming
     }
 }
@@ -103,6 +102,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
     }
 }
 
+uint32_t getADCValue(void){
+    return adc_value;
+}
 
 // void MX_GPIO_Init(void) {
 //     __HAL_RCC_GPIOA_CLK_ENABLE();  // Enable GPIOA clock
