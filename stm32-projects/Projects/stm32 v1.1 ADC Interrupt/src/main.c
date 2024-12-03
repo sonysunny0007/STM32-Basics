@@ -53,14 +53,14 @@ int main(void)
   HAL_ADC_Start(&hadc1);  // Start the ADC
 
     while (1) {
-        // Poll for ADC conversion
+        
         uint32_t currentAdcValue = getADCValue();
         float voltage = (currentAdcValue * 3.3) / 4095;  // Convert to voltage
         printf("Voltage: %.2f V\r\n", voltage);
         HAL_Delay(500);  // Delay to avoid spamming
     }
 }
-//TIM3 Initialization
+
 
 void MX_ADC_Init(void){
 
