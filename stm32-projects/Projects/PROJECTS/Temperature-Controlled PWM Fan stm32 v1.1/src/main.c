@@ -8,8 +8,6 @@
 #include "math.h"
 #include "timer.h"
 
-//echo -e "Sony Sunny" > /dev/tty.usbserial-0001    //use this code in minicom to send the data
-
 // Global Variables
 ADC_HandleTypeDef hadc1;
 TIM_HandleTypeDef htim3;
@@ -30,49 +28,31 @@ void PWM_SetDutyCycle(uint8_t duty);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 
 int main(void) {
-    // Initialize the HAL Library
-    HAL_Init();
+    HAL_Init();                  // Initialize HAL Library
+    SystemClock_Config();        // Configure system clock
+    UART_Init();                 // Initialize UART
 
-    // Configure system clock
-    SystemClock_Config();
+    UART_Transmit("System Booting... ADC + PWM Project with DMA\r\n");
+    HAL_Delay(2000);  // Adding delay for clarity during debugging
 
-    // Initialize UART
-    UART_Init();
+    MX_GPIO_Init();              // Initialize GPIOs
+    DMA_Init();                  // Initialize DMA
+    MX_ADC_Init();               // Initialize ADC
+    MX_TIM_Init();               // Initialize Timer
 
-    // Initial boot message
-    UART_Transmit("****************************************************************\r\n");
-    UART_Transmit("System Booting.... #Temperature Controlled Motor DMA Project#\r\n");
-
-    // Print system clock frequency
-    uint32_t sysclk = Get_SYSCLK_Frequency();
-    printf("System clock frequency: %lu MHz\r\n", sysclk / 1000000);
-
-    HAL_Delay(2000);  // Adding 2s delay
-
-    // Configure GPIOs
-    MX_GPIO_Init();
-
-    // Initialize DMA, ADC, and TIM
-    DMA_Init();
-    MX_ADC_Init();
-    MX_TIM_Init();
-
-    // Start PWM
-    HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_1);
-
-    // Start ADC in DMA mode
-    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN);
+    HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_3); // Start PWM
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // Start ADC with DMA
 
     while (1) {
-        // Convert ADC to voltage
+        // Read and display ADC value
         float voltage = (adc_buf[0] * 3.3) / 4095;
         snprintf(uart_buffer, sizeof(uart_buffer), "Voltage: %.2f V\r\n", voltage);
         UART_Transmit(uart_buffer);
 
-        // Set PWM duty cycle based on voltage
+        // Update PWM duty cycle based on ADC value
         PWM_SetDutyCycle((uint8_t)((adc_buf[0] * 100) / 4095));
 
-        HAL_Delay(500);
+        HAL_Delay(500); // Delay for output readability
     }
 }
 
@@ -84,8 +64,14 @@ void MX_GPIO_Init(void) {
     // Configure GPIO PA0 for analog input (ADC)
     GPIO_Init('A', GPIO_PIN_0, GPIO_MODE_ANALOG, GPIO_NOPULL, NULL, NULL);
 
-    // Configure GPIO PB4 for alternate function (PWM output for TIM3_CH1)
-    // GPIO_Init('B', GPIO_PIN_4, GPIO_MODE_AF_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, GPIO_AF2_TIM3);
+    // Configure GPIO PB0 for alternate function (PWM output for TIM3_CH3)
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 }
 
 void DMA_Init(void) {
@@ -103,8 +89,7 @@ void DMA_Init(void) {
     hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
 
     if (HAL_DMA_Init(&hdma_adc1) != HAL_OK) {
-        // Error Handling
-        while (1);
+        while (1); // Error Handling
     }
 
     __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
@@ -123,8 +108,7 @@ void MX_ADC_Init(void) {
     hadc1.Init.NbrOfConversion = 1;
 
     if (HAL_ADC_Init(&hadc1) != HAL_OK) {
-        // Error Handling
-        while (1);
+        while (1); // Error Handling
     }
 
     ADC_ChannelConfTypeDef sConfig = {0};
@@ -133,8 +117,7 @@ void MX_ADC_Init(void) {
     sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
 
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) {
-        // Error Handling
-        while (1);
+        while (1); // Error Handling
     }
 }
 
@@ -149,8 +132,15 @@ void MX_TIM_Init(void) {
     htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
 
     if (HAL_TIM_PWM_Init(&htim3) != HAL_OK) {
-        // Error Handling
-        while (1);
+        while (1); // Error Handling
+    }
+
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+
+    if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
+        while (1); // Error Handling
     }
 
     TIM_OC_InitTypeDef sConfig = {0};
@@ -160,22 +150,18 @@ void MX_TIM_Init(void) {
     sConfig.OCFastMode = TIM_OCFAST_DISABLE;
 
     if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfig, TIM_CHANNEL_1) != HAL_OK) {
-        // Error Handling
-        while (1);
+        while (1); // Error Handling
     }
 
     HAL_TIM_MspPostInit(&htim3);
 }
 
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
     if (htim->Instance == TIM3) {
-        // Enable GPIOB clock
-        __HAL_RCC_GPIOB_CLK_ENABLE();
+        GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-        // Configure PB4 as TIM3_CH1 (Alternate Function: PWM output)
-        GPIO_InitStruct.Pin = GPIO_PIN_4;
+        __HAL_RCC_GPIOB_CLK_ENABLE();
+        GPIO_InitStruct.Pin = GPIO_PIN_0;
         GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
         GPIO_InitStruct.Pull = GPIO_NOPULL;
         GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
