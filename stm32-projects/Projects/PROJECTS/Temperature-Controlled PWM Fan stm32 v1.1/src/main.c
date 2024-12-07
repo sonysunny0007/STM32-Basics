@@ -26,6 +26,7 @@ void MX_TIM_Init(void);
 void DMA_Init(void);
 void PWM_SetDutyCycle(uint8_t duty);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc);
 
 int main(void) {
     HAL_Init();                  // Initialize HAL Library
@@ -40,8 +41,9 @@ int main(void) {
     MX_ADC_Init();               // Initialize ADC
     MX_TIM_Init();               // Initialize Timer
 
+    HAL_TIM_Base_Start(&htim3);
     HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_3); // Start PWM
-    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // Start ADC with DMA
+    HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, 1); // Start ADC with DMA
 
     while (1) {
         // Read and display ADC value
@@ -51,8 +53,7 @@ int main(void) {
 
         // Update PWM duty cycle based on ADC value
         PWM_SetDutyCycle((uint8_t)((adc_buf[0] * 100) / 4095));
-
-        HAL_Delay(500); // Delay for output readability
+        HAL_Delay(1000); // Delay for output readability
     }
 }
 
@@ -95,15 +96,23 @@ void DMA_Init(void) {
     __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
 }
 
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+    if (hadc->Instance == ADC1) {
+        // ADC value conversion to voltage
+        float voltage = ((float)adc_buffer[0] / 4096) * 3.3;
+        snprintf(uart_buffer, sizeof(uart_buffer), "ADC Voltage: %.2f V\r\n", voltage);
+        UART_Transmit(uart_buffer);
+    }
+}
 void MX_ADC_Init(void) {
     __HAL_RCC_ADC1_CLK_ENABLE();
 
     hadc1.Instance = ADC1;
     hadc1.Init.Resolution = ADC_RESOLUTION_12B;
     hadc1.Init.ScanConvMode = DISABLE;
-    hadc1.Init.ContinuousConvMode = DISABLE;
+    hadc1.Init.ContinuousConvMode = DISABLE;  // Keep disabled for external trigger
     hadc1.Init.DiscontinuousConvMode = DISABLE;
-    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO; // Timer 3 TRGO
     hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
     hadc1.Init.NbrOfConversion = 1;
 
@@ -125,18 +134,19 @@ void MX_TIM_Init(void) {
     __HAL_RCC_TIM3_CLK_ENABLE();
 
     htim3.Instance = TIM3;
-    htim3.Init.Prescaler = 16799;
+    htim3.Init.Prescaler = 16799;  // Adjust for 10 kHz timer frequency
     htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim3.Init.Period = 999;
+    htim3.Init.Period = 999;      // Adjust for 10 Hz TRGO rate
     htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim3.Init.RepetitionCounter = 0;
     htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
 
-    if (HAL_TIM_PWM_Init(&htim3) != HAL_OK) {
+    if (HAL_TIM_Base_Init(&htim3) != HAL_OK) {
         while (1); // Error Handling
     }
 
     TIM_MasterConfigTypeDef sMasterConfig = {0};
-    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE; // Generate TRGO on update
     sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
 
     if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
@@ -145,11 +155,11 @@ void MX_TIM_Init(void) {
 
     TIM_OC_InitTypeDef sConfig = {0};
     sConfig.OCMode = TIM_OCMODE_PWM1;
-    sConfig.Pulse = 0;
+    sConfig.Pulse = 0; // Initialize with 0 duty cycle
     sConfig.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfig.OCFastMode = TIM_OCFAST_DISABLE;
 
-    if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfig, TIM_CHANNEL_1) != HAL_OK) {
+    if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfig, TIM_CHANNEL_3) != HAL_OK) {
         while (1); // Error Handling
     }
 
@@ -170,9 +180,10 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim) {
     }
 }
 
+
 void PWM_SetDutyCycle(uint8_t duty) {
     if (duty > 100) duty = 100;
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, duty);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, (htim3.Init.Period + 1) * duty / 100);
 }
 
 void SysTick_Handler(void) {
