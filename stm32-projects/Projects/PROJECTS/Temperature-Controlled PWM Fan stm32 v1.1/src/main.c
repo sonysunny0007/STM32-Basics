@@ -31,15 +31,17 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc);
 int main(void) {
     HAL_Init();                  // Initialize HAL Library
     SystemClock_Config();        // Configure system clock
-    UART_Init();                 // Initialize UART
+   
 
     UART_Transmit("System Booting... ADC + PWM Project with DMA\r\n");
     HAL_Delay(2000);  // Adding delay for clarity during debugging
 
     MX_GPIO_Init();              // Initialize GPIOs
     DMA_Init();                  // Initialize DMA
+    UART_Init();                 // Initialize UART
     MX_ADC_Init();               // Initialize ADC
     MX_TIM_Init();               // Initialize Timer
+    
 
     HAL_TIM_Base_Start(&htim3);
     HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_3); // Start PWM
@@ -76,25 +78,32 @@ void MX_GPIO_Init(void) {
 }
 
 void DMA_Init(void) {
+        // Enable the clock for DMA2, required for DMA operations
     __HAL_RCC_DMA2_CLK_ENABLE();
 
-    hdma_adc1.Instance = DMA2_Stream0;
-    hdma_adc1.Init.Channel = DMA_CHANNEL_0;
-    hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;
-    hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
-    hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
-    hdma_adc1.Init.Mode = DMA_CIRCULAR;
-    hdma_adc1.Init.Priority = DMA_PRIORITY_LOW;
-    hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    // Configure the DMA handle for ADC1
+    hdma_adc1.Instance = DMA2_Stream0;  // Select DMA2 Stream 0 for ADC1
+    hdma_adc1.Init.Channel = DMA_CHANNEL_0;  // Set DMA channel 0 (connected to ADC1)
+    hdma_adc1.Init.Direction = DMA_PERIPH_TO_MEMORY;  // Data transfer direction: from peripheral (ADC) to memory
+    hdma_adc1.Init.PeriphInc = DMA_PINC_DISABLE;  // Disable peripheral address increment (fixed ADC address)
+    hdma_adc1.Init.MemInc = DMA_MINC_ENABLE;  // Enable memory address increment (data stored sequentially in memory)
+    hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;  // Set peripheral data alignment to 32-bit word
+    hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;  // Set memory data alignment to 32-bit word
+    hdma_adc1.Init.Mode = DMA_CIRCULAR;  // Enable circular mode for continuous data transfer
+    hdma_adc1.Init.Priority = DMA_PRIORITY_LOW;  // Set low priority for this DMA stream
+    hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;  // Disable FIFO mode for direct data transfer
 
+    // Initialize the DMA with the specified configuration
     if (HAL_DMA_Init(&hdma_adc1) != HAL_OK) {
-        while (1); // Error Handling
+        while (1); // Loop forever if DMA initialization fails (error handling)
     }
 
-    __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);
+    // Link the DMA handle to the ADC handle
+    __HAL_LINKDMA(&hadc1, DMA_Handle, hdma_adc1);  // Associate DMA handle with ADC1 for data transfer
+
 }
+
+
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
     if (hadc->Instance == ADC1) {
@@ -105,29 +114,37 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
     }
 }
 void MX_ADC_Init(void) {
+        // Enable the clock for ADC1 peripheral
     __HAL_RCC_ADC1_CLK_ENABLE();
 
-    hadc1.Instance = ADC1;
-    hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-    hadc1.Init.ScanConvMode = DISABLE;
-    hadc1.Init.ContinuousConvMode = DISABLE;  // Keep disabled for external trigger
-    hadc1.Init.DiscontinuousConvMode = DISABLE;
-    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO; // Timer 3 TRGO
-    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-    hadc1.Init.NbrOfConversion = 1;
+    // Configure the ADC instance
+    hadc1.Instance = ADC1;  // Specify ADC1 as the ADC instance to configure
+    hadc1.Init.Resolution = ADC_RESOLUTION_12B;  // Set ADC resolution to 12 bits
+    hadc1.Init.ScanConvMode = DISABLE;  // Disable scan mode (single channel conversion)
+    hadc1.Init.ContinuousConvMode = ENABLE;  // Enable continuous conversion mode for back-to-back conversions
+    hadc1.Init.DiscontinuousConvMode = DISABLE;  // Disable discontinuous conversion mode
+    hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;  // Use Timer 3 TRGO signal as an external trigger for ADC
+    hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;  // Right-align the ADC data
+    hadc1.Init.NbrOfConversion = 1;  // Configure for a single conversion in regular group
+    hadc1.Init.DMAContinuousRequests = ENABLE;  // Enable continuous DMA requests for ADC data transfer
+    hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;  // End of conversion flag set after each conversion
 
+    // Initialize the ADC with the specified parameters
     if (HAL_ADC_Init(&hadc1) != HAL_OK) {
-        while (1); // Error Handling
+        while (1); // Loop forever if ADC initialization fails (error handling)
     }
 
-    ADC_ChannelConfTypeDef sConfig = {0};
-    sConfig.Channel = ADC_CHANNEL_0;
-    sConfig.Rank = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+    // Configure the specific ADC channel
+    ADC_ChannelConfTypeDef sConfig = {0};  // Create and initialize a configuration structure
+    sConfig.Channel = ADC_CHANNEL_0;  // Select channel 0 (PA0 pin) for ADC conversion
+    sConfig.Rank = 1;  // Set rank to 1 for single-channel conversion
+    sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;  // Set sampling time to 144 ADC clock cycles for higher stability
 
+    // Apply the channel configuration
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) {
-        while (1); // Error Handling
+        while (1); // Loop forever if channel configuration fails (error handling)
     }
+
 }
 
 void MX_TIM_Init(void) {
