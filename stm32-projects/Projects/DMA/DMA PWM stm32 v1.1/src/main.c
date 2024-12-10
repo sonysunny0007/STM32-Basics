@@ -8,86 +8,118 @@
 #include "math.h"
 #include "timer.h"
 
-//echo -e "Sony Sunny" > /dev/tty.usbserial-0001    //use this code in minicom to send the data
+// GPIO Pin configuration
+#define GPIO_PIN GPIO_PIN_5  // Using GPIOA Pin 5 (LED)
 
-// Global Variables
-TIM_HandleTypeDef htim2;
-DMA_HandleTypeDef hdma_tim2_ch1;
-uint32_t pwm_duty_cycle[] = {100, 300, 600, 900}; // Predefined duty cycles
-#define PWM_BUFFER_LENGTH (sizeof(pwm_duty_cycle) / sizeof(pwm_duty_cycle[0]))
+// Global variables for Timer and DMA
+TIM_HandleTypeDef htim2;        // Timer handle
+DMA_HandleTypeDef hdma_tim2_up; // DMA handle
 
-// Function Prototypes
+uint32_t led_data[] = {
+    GPIO_PIN,          // Set GPIO_PIN_5 (Lower 16 bits in BSRR)
+    GPIO_PIN << 16     // Clear GPIO_PIN_5 (Upper 16 bits in BSRR)
+};
+
 void MX_GPIO_Init(void);
-void MX_TIM2_Init(void);
-void MX_DMA_Init(void);
+void TIM_Init(void);
+void DMA_Init(void);
 
 int main(void) {
-    HAL_Init();                     // Initialize HAL library
-    SystemClock_Config();           // Configure system clock
-    MX_GPIO_Init();                 // Initialize GPIOs
-    MX_DMA_Init();                  // Initialize DMA
-    MX_TIM2_Init();                 // Initialize Timer
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    TIM_Init();
+    DMA_Init();
+    UART_Init();
 
-    HAL_TIM_PWM_Start_DMA(&htim2, TIM_CHANNEL_1, pwm_duty_cycle, PWM_BUFFER_LENGTH);
+    printf("DMA timer project \r\n");
+
+    // Start Timer
+    if (HAL_TIM_Base_Start(&htim2) != HAL_OK) {
+        printf("Timer Start Error\r\n");
+        while (1);
+    }
+
+    
+    if (HAL_DMA_Start(&hdma_tim2_up, (uint32_t)led_data, (uint32_t)&GPIOA->BSRR, 2) != HAL_OK) {
+        printf("DMA Start Error\r\n");
+        while (1);
+    }
+
+    // Link DMA to Timer Update Event
+    __HAL_TIM_ENABLE_DMA(&htim2, TIM_DMA_UPDATE);
 
     while (1) {
-        // Main loop - PWM is handled by Timer and DMA
+        printf("Timer is running \r\n");
+        HAL_Delay(1000);
     }
 }
 
-// GPIO Initialization
 void MX_GPIO_Init(void) {
     __HAL_RCC_GPIOA_CLK_ENABLE();
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-    GPIO_InitStruct.Pin = GPIO_PIN_5;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
-// DMA Initialization
-void MX_DMA_Init(void) {
-    __HAL_RCC_DMA1_CLK_ENABLE();
-
-    hdma_tim2_ch1.Instance = DMA1_Stream5;
-    hdma_tim2_ch1.Init.Channel = DMA_CHANNEL_3;
-    hdma_tim2_ch1.Init.Direction = DMA_MEMORY_TO_PERIPH;
-    hdma_tim2_ch1.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_tim2_ch1.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_tim2_ch1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
-    hdma_tim2_ch1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
-    hdma_tim2_ch1.Init.Mode = DMA_CIRCULAR;
-    hdma_tim2_ch1.Init.Priority = DMA_PRIORITY_LOW;
-    hdma_tim2_ch1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
-
-    HAL_DMA_Init(&hdma_tim2_ch1);
-
-    __HAL_LINKDMA(&htim2, hdma[TIM_DMA_ID_CC1], hdma_tim2_ch1);
-}
-
-// Timer Initialization
-void MX_TIM2_Init(void) {
+void TIM_Init(void) {
     __HAL_RCC_TIM2_CLK_ENABLE();
 
     htim2.Instance = TIM2;
-    htim2.Init.Prescaler = 167;          // Timer clock = 1 MHz
+    htim2.Init.Prescaler = 15999;  // Prescaler to get 1 kHz timer frequency (16 MHz / 16000)
     htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim2.Init.Period = 999;            // PWM frequency = 1 kHz
+    htim2.Init.Period = 999;       // Overflow every 100 ms
     htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
-    HAL_TIM_PWM_Init(&htim2);
+    if (HAL_TIM_Base_Init(&htim2) != HAL_OK) {
+        printf("Timer initialization error\r\n");
+        while (1);
+    }
 
-    TIM_OC_InitTypeDef sConfig = {0};
-    sConfig.OCMode = TIM_OCMODE_PWM1;
-    sConfig.Pulse = 0;                  // Initial duty cycle = 0
-    sConfig.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfig.OCFastMode = TIM_OCFAST_DISABLE;
+    TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+    TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-    HAL_TIM_PWM_ConfigChannel(&htim2, &sConfig, TIM_CHANNEL_1);
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK) {
+        printf("Clock Source error\r\n");   
+        while (1);
+    }
+
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK) {
+        // Master configuration error
+        while (1);
+    }
+}
+
+
+void DMA_Init(void) {
+    __HAL_RCC_DMA1_CLK_ENABLE();
+
+    hdma_tim2_up.Instance = DMA1_Stream1;
+    hdma_tim2_up.Init.Channel = DMA_CHANNEL_3;
+    hdma_tim2_up.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    hdma_tim2_up.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_tim2_up.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_tim2_up.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+    hdma_tim2_up.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
+    hdma_tim2_up.Init.Mode = DMA_CIRCULAR;
+    hdma_tim2_up.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_tim2_up.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+
+    if (HAL_DMA_Init(&hdma_tim2_up) != HAL_OK) {
+        printf("DMA initialization error\r\n");
+        while (1);
+    }
+
+    // Link DMA handle to Timer Update Event
+    __HAL_LINKDMA(&htim2, hdma[TIM_DMA_ID_UPDATE], hdma_tim2_up);
 }
 
 // System Tick Handler
